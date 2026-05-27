@@ -1,0 +1,76 @@
+networks:
+  1panel-network:
+    external: true
+
+services:
+  core:
+    container_name: mxspace-core
+    image: innei/mx-server:latest
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=mx
+      - PG_PASSWORD=mx
+      - PG_DATABASE=mx_core
+      - SNOWFLAKE_WORKER_ID=1
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-localhost}
+      - JWT_SECRET=${JWT_SECRET:-YOUR_SUPER_SECURED_JWT_SECRET_STRING}
+      - ENCRYPT_ENABLE=${ENCRYPT_ENABLE}
+      - ENCRYPT_KEY=${ENCRYPT_KEY}
+    volumes:
+      - ./data/mx-space:/root/.mx-space
+    ports:
+      - ${PANEL_APP_PORT_HTTP:-2333}:2333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - 1panel-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:2333/api/v2/ping"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    container_name: mxspace-postgres
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=mx
+      - POSTGRES_PASSWORD=mx
+      - POSTGRES_DB=mx_core
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - 1panel-network
+    ports:
+      - 5432:5432
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mx -d mx_core"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    container_name: mxspace-redis
+    image: redis:alpine
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - 1panel-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
