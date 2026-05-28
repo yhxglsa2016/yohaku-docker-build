@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: yohaku
+  IMAGE_NAME: ${{ github.repository_owner }}/yohaku
 
 jobs:
   build-and-push-image:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          repository: IPF-Sinon/Yohaku
+          repository: ${{ github.repository_owner }}/Yohaku
           ref: sync          # 关键：使用 sync 分支的代码（包含 Dockerfile）
           token: ${{ secrets.GH_PAT }}   # 需要具有读取该私有仓库的 Personal Access Token
           submodules: true
@@ -31,7 +31,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GH_PAT}}
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
