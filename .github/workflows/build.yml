@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: Yohaku
+  IMAGE_NAME: yohaku
 
 jobs:
   build-and-push-image:
