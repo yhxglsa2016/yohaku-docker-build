@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: Yohaku
 
 jobs:
   build-and-push-image:
@@ -21,7 +21,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          repository: IPF-Sinon/Yohaku
           ref: sync          # 关键：使用 sync 分支的代码（包含 Dockerfile）
+          token: ${{ secrets.GH_PAT }}   # 需要具有读取该私有仓库的 Personal Access Token
           submodules: true
 
       - name: Log in to the Container registry
