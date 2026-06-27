@@ -11,7 +11,7 @@ env:
 
   ALIYUN_REGISTRY: crpi-j7g59d7x1rxfxj7r.cn-chengdu.personal.cr.aliyuncs.com
   ALIYUN_NAMESPACE: glsaone
-  ALIYUN_REPO: github
+  ALIYUN_REPO: yohaku
 
 jobs:
   build-and-push-image:
