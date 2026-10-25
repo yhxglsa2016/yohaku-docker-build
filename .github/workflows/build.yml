@@ -4,7 +4,7 @@ on:
   push:
     branches: ['main']
   workflow_dispatch:
-  # 由私有 Yohaku 仓库的「上游同步」工作流派发（见仓库根目录 upstream-sync.yml）
+  # 由私有 Yohaku 仓库的「上游同步」工作流派发（见 .github/workflows/upstream-sync.yml）
   repository_dispatch:
     types:
       - sync-updated
