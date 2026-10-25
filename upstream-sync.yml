@@ -1,44 +1,136 @@
-name: 'Upstream Sync'
+name: '上游同步 - 指定日期或最新'
 
 on:
   schedule:
-    # 每天 UTC 0:00（北京时间 8:00）执行一次
+    # 每天 UTC 00:00 自动检查上游仓库是否有更新
     - cron: '0 0 * * *'
-  workflow_dispatch:  # 允许手动触发
+
+  workflow_dispatch:
     inputs:
       sync_test_mode:
-        description: 'Fork Sync Test Mode'
+        description: '同步测试模式（跳过推送和 Docker 触发）'   # 是否仅测试同步而不实际执行推送和构建
         type: boolean
         default: false
 
+      target_date:
+        description: '要同步到的目标日期（格式：YYYY-MM-DD）。留空则同步最新提交。'
+        type: string
+        default: ''
+
 jobs:
-  sync_latest_from_upstream:
+  sync_upstream:
     runs-on: ubuntu-latest
-    name: Sync latest commits from upstream repo
+    name: 同步上游（按日期或最新）
+
     steps:
-      # 步骤 1：检出你的目标仓库，并切换到 sync 分支
-      - name: Checkout target repo
-        uses: actions/checkout@v3
+      # 检出当前仓库的 sync 分支，用于后续合并上游更改
+      - name: 检出目标仓库
+        uses: actions/checkout@v4
         with:
-          ref: sync                    # 指定分支为 sync
-          persist-credentials: false   # 关键：不保存默认的 GITHUB_TOKEN，避免后续操作使用错误凭据
+          ref: sync                # 使用 sync 分支
+          fetch-depth: 0           # 获取完整历史，以便计算提交差异
+          persist-credentials: false
 
-      # 步骤 2：执行同步操作
-      - name: Sync upstream changes
-        id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
-        with:
-          target_sync_branch: sync                 # 你的目标分支名
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}  # 操作你仓库的 Token
-          upstream_sync_branch: main               # 上游仓库要同步的分支
-          upstream_sync_repo: innei-dev/Yohaku     # 上游仓库全名
-          upstream_repo_access_token: ${{ secrets.UPSTREAM_REPO_SECRET }}  # 访问上游的 Token
-          test_mode: ${{ inputs.sync_test_mode }}  # 测试模式（不会真的推送）
+      # 配置 Git 用户信息，以便后续提交操作
+      - name: 配置 Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # 步骤 3：输出结果
-      - name: New commits found
-        if: steps.sync.outputs.has_new_commits == 'true'
-        run: echo "检测到上游有新提交，已同步。"
-      - name: No new commits
-        if: steps.sync.outputs.has_new_commits == 'false'
-        run: echo "上游没有新提交。"
+      # 添加上游仓库地址并拉取其 main 分支，使用个人访问令牌（secrets.UPSTREAM_REPO_SECRET）
+      - name: 添加上游并获取
+        run: |
+          git remote add upstream https://x-access-token:${{ secrets.UPSTREAM_REPO_SECRET }}@github.com/innei-dev/Yohaku.git
+          git fetch upstream main
+
+      # 确定本次同步的目标提交哈希（根据用户输入的日期或取最新）
+      - name: 确定目标提交
+        id: date_commit
+        run: |
+          DATE="${{ inputs.target_date }}"
+
+          if [ -z "$DATE" ]; then
+            # 未指定日期 → 使用 upstream/main 分支的最新提交
+            COMMIT=$(git rev-parse upstream/main)
+            echo "正在同步到最新提交：$COMMIT"
+          else
+            # 指定了日期 → 查找该日期 23:59:59 UTC 之前最后一个提交
+            COMMIT=$(git rev-list -1 --before="${DATE}T23:59:59Z" upstream/main)
+
+            if [ -z "$COMMIT" ]; then
+              echo "在 $DATE 之前未找到任何提交"
+              exit 1
+            fi
+
+            echo "正在同步到 $DATE 的提交：$COMMIT"
+          fi
+
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+      # 检查当前 sync 分支是否已经与目标提交一致，避免无意义的操作
+      - name: 检查是否需要同步
+        id: check
+        run: |
+          TARGET="${{ steps.date_commit.outputs.commit }}"
+          CURRENT="$(git rev-parse HEAD)"
+
+          echo "当前 sync 分支提交：$CURRENT"
+          echo "上游目标提交：$TARGET"
+
+          if [ "$CURRENT" = "$TARGET" ]; then
+            echo "上游无新变更，无需同步。"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "检测到上游有更新，需要同步。"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 若需要同步，则强制重置 sync 分支到目标提交（即丢弃当前本地改动）
+      - name: 重置同步分支到目标提交
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git reset --hard "${{ steps.date_commit.outputs.commit }}"
+
+          echo "本地 sync 分支当前指向："
+          git rev-parse HEAD
+
+      # 推送更新到远端仓库的 sync 分支（仅在非测试模式下执行）
+      - name: 推送到目标仓库
+        if: |
+          steps.check.outputs.changed == 'true' &&
+          !inputs.sync_test_mode
+        run: |
+          git remote set-url origin \
+            https://x-access-token:${{ secrets.UPSTREAM_REPO_SECRET }}@github.com/${{ github.repository }}.git
+
+          git push origin sync --force   # 使用强制推送覆盖远程 sync 分支
+
+      # 触发 Docker 构建工作流（通过仓库分发事件，仅在非测试模式下执行）
+      - name: 触发 Docker 构建
+        if: |
+          steps.check.outputs.changed == 'true' &&
+          !inputs.sync_test_mode
+        run: |
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.UPSTREAM_REPO_SECRET }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/IPF-Sinon/yohaku-docker-build/dispatches \
+            -d '{"event_type":"sync-updated"}'
+
+          echo "已触发 Docker 构建工作流。"
+
+      # 测试模式跳过推送和 Docker 触发
+      - name: 跳过推送（测试模式）
+        if: ${{ inputs.sync_test_mode }}
+        run: |
+          echo "当前为测试模式，跳过推送和 Docker 触发。"
+
+      # 若无需同步，则给出提示
+      - name: 未检测到变更
+        if: |
+          steps.check.outputs.changed == 'false' &&
+          !inputs.sync_test_mode
+        run: |
+          echo "上游未发现新提交，跳过 Docker 构建。"

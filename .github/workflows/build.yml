@@ -4,11 +4,16 @@ on:
   push:
     branches: ['main']
   workflow_dispatch:
+  # 由私有 Yohaku 仓库的「上游同步」工作流派发（见仓库根目录 upstream-sync.yml）
+  repository_dispatch:
+    types:
+      - sync-updated
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/yohaku
 
+  # 阿里云 ACR（个人版·成都）
   ALIYUN_REGISTRY: crpi-j7g59d7x1rxfxj7r.cn-chengdu.personal.cr.aliyuncs.com
   ALIYUN_NAMESPACE: glsaone
   ALIYUN_REPO: yohaku
