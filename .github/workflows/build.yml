@@ -36,6 +36,10 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           submodules: true
 
+      - name: Resolve source sha
+        id: src
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -60,6 +64,7 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha
+            type=raw,value=src-${{ steps.src.outputs.sha }}
 
       - name: Build and push Docker image
         id: push
